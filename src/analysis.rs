@@ -60,6 +60,8 @@ pub enum QueueState {
         job_id: String,
         workdir: String,
     },
+    /// `squeue` could not be queried, the job may or may not be in the queue.
+    Unavailable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -215,6 +217,22 @@ pub fn scf_convergence(out: &OutputData) -> ScfConvergence {
     }
 }
 
+/// Convergence of the response solver(s) that ran, for the `CPSCFCONV` column.
+///
+/// * CP-SCF (analytic frequencies, NMR, TD-DFT gradients): `THE CP-SCF HAS CONVERGED`.
+/// * TD-DFT/CIS excitation energies come from a Davidson diagonalisation, not
+///   from a CP-SCF; for TD-DFT jobs its convergence is reported here as well.
+///
+/// `Some(false)` if any solver that ran did not converge, `Some(true)` if all
+/// that ran converged, `None` if no response solver ran at all (e.g. `NumFreq`).
+pub fn response_convergence(out: &OutputData, job: JobType) -> Option<bool> {
+    let davidson = if job == JobType::Tddft { out.tddft_converged } else { None };
+    match (out.cpscf_converged, davidson) {
+        (None, None) => None,
+        (a, b) => Some(a != Some(false) && b != Some(false)),
+    }
+}
+
 /// Compute dU, dH, TdS, dG from the thermochemistry block.
 ///
 /// dH = dU + kT (ORCA prints this as `Thermal Enthalpy correction`; if that
@@ -267,6 +285,9 @@ pub fn evaluate(
                     r.raise(Status::Running, format!("no .out file yet, job {job_id} is running"))
                 }
                 QueueState::Unknown => r.raise(Status::NotSubmitted, "no .out file, job not submitted?"),
+                QueueState::Unavailable => {
+                    r.raise(Status::NotSubmitted, "no .out file; queue status unknown (squeue failed), job may be pending")
+                }
             }
             return r;
         }
@@ -275,6 +296,10 @@ pub fn evaluate(
                 QueueState::Running { job_id, workdir } => {
                     r.raise(Status::Running, format!("job {job_id} is running (WorkDir: {workdir})"))
                 }
+                QueueState::Unavailable => r.raise(
+                    Status::Error,
+                    ".out file is empty; queue status unknown (squeue failed), job may still be running",
+                ),
                 _ => r.raise(Status::Error, ".out file is empty or contains no ORCA output"),
             }
             return r;
@@ -336,6 +361,11 @@ pub fn evaluate(
             for e in other_errors {
                 r.raise(Status::Error, e.clone());
             }
+        } else if queue == QueueState::Unavailable {
+            r.raise(
+                Status::Error,
+                "ORCA did not terminate normally; queue status unknown (squeue failed), job may still be running",
+            );
         } else if scf != ScfConvergence::NotFully {
             r.raise(Status::Error, "ORCA did not terminate normally (killed, time limit or still running elsewhere?)");
         }
@@ -402,9 +432,6 @@ pub fn evaluate(
             r.imaginary = out.imaginary_frequencies(opts.imaginary_threshold);
             r.character = Some(character(r.imaginary.len()));
         }
-        if out.cpscf_converged.is_none() {
-            r.raise(Status::Warning, "no `THE CP-SCF HAS CONVERGED` found (numerical frequencies?)");
-        }
         match thermo_result(&out) {
             Some(t) => r.thermo = Some(t),
             None => r.raise(Status::Warning, "thermochemistry block incomplete"),
@@ -427,15 +454,19 @@ pub fn evaluate(
                 r.raise(Status::Warning, format!("shieldings found for {} of {} ghost atoms", r.nics.len(), ghosts.len()));
             }
         }
-        if out.cpscf_converged.is_none() {
-            r.raise(Status::Warning, "no `THE CP-SCF HAS CONVERGED` found");
-        }
     }
     if jt == JobType::Ftdft && out.n_fod.is_none() {
         r.raise(Status::Warning, "no N_FOD value found");
     }
     if jt == JobType::Tddft && out.tddft_states.is_empty() {
         r.raise(Status::Error, "no excited states found");
+    }
+    // Response solvers are only judged when they actually ran.
+    if out.cpscf_converged == Some(false) {
+        r.raise(Status::Error, "CP-SCF was started but did not converge");
+    }
+    if out.tddft_converged == Some(false) {
+        r.raise(Status::Error, "TD-DFT/CIS Davidson diagonalisation was started but did not converge");
     }
 
     // ---- summary line for successful jobs ----------------------------------------
@@ -689,5 +720,47 @@ mod tests {
         assert_eq!(character(0), Character::Minimum);
         assert_eq!(character(1), Character::TransitionState);
         assert_eq!(character(2), Character::Fail);
+    }
+
+    #[test]
+    fn numerical_frequencies_without_cpscf_are_ok() {
+        let inp = parse_input_text("! r2scan-3c numfreq\n* xyz 0 1\nH 0 0 0\nH 0 0 0.7\n*");
+        let text = "FINAL SINGLE POINT ENERGY   -1.0\nVIBRATIONAL FREQUENCIES\n   5:   0.00 cm**-1\n   6:   4400.00 cm**-1\n\nTemperature         ... 298.15 K\nZero point energy                ...      0.01 Eh      13.21 kcal/mol\nTotal correction                          0.02 Eh      14.99 kcal/mol\nFinal entropy term                ...      0.03 Eh     13.41 kcal/mol\nG-E(el)                           ...      0.04 Eh       2.17 kcal/mol\n****ORCA TERMINATED NORMALLY****\n";
+        let r = evaluate("x", inp, parsed(text), QueueState::Unknown, &AnalysisOptions::default());
+        assert_eq!(r.status, Status::Ok, "{:?}", r.messages);
+        assert_eq!(response_convergence(r.output.as_ref().unwrap(), JobType::Freq), None);
+    }
+
+    #[test]
+    fn started_but_unconverged_cpscf_is_an_error() {
+        let inp = parse_input_text("! pbe0 def2-tzvp nmr\n* xyz 0 1\nC 0 0 0\n*");
+        let text = "FINAL SINGLE POINT ENERGY   -1.0\n     CP-SCF ITERATION   0:      0.0004\nCHEMICAL SHIELDING SUMMARY (ppm)\n      0       C          55.1        120.5\n\n****ORCA TERMINATED NORMALLY****\n";
+        let r = evaluate("x", inp, parsed(text), QueueState::Unknown, &AnalysisOptions::default());
+        assert_eq!(r.status, Status::Error);
+        assert!(r.messages.iter().any(|m| m.contains("CP-SCF was started but did not converge")));
+    }
+
+    #[test]
+    fn response_convergence_combines_davidson_and_cpscf() {
+        let d = |text: &str| parse_output_text(text);
+        let conv = "DAVIDSON-DIAGONALIZATION\n*** CONVERGENCE OF RESIDUAL NORM REACHED ***\n";
+        assert_eq!(response_convergence(&d(conv), JobType::Tddft), Some(true));
+        assert_eq!(response_convergence(&d(conv), JobType::Sp), None, "Davidson only counts for TD-DFT jobs");
+        assert_eq!(response_convergence(&d("DAVIDSON-DIAGONALIZATION\n"), JobType::Tddft), Some(false));
+        let grad = format!("{conv}     CP-SCF ITERATION   0:      0.0004\n");
+        assert_eq!(response_convergence(&d(&grad), JobType::Tddft), Some(false), "unconverged Z-vector CP-SCF");
+        let grad_ok = format!("{grad} *** THE CP-SCF HAS CONVERGED ***\n");
+        assert_eq!(response_convergence(&d(&grad_ok), JobType::Tddft), Some(true));
+    }
+
+    #[test]
+    fn unavailable_queue_changes_messages_not_status() {
+        let text = "FINAL SINGLE POINT ENERGY   -1.0\nSCF CONVERGED AFTER 10 CYCLES\n";
+        let r = evaluate("x", sp_input(), parsed(text), QueueState::Unavailable, &AnalysisOptions::default());
+        assert_eq!(r.status, Status::Error);
+        assert!(r.messages[0].contains("queue status unknown"), "{:?}", r.messages);
+        let r = evaluate("x", sp_input(), Observation::Missing, QueueState::Unavailable, &AnalysisOptions::default());
+        assert_eq!(r.status, Status::NotSubmitted);
+        assert!(r.messages[0].contains("queue status unknown"));
     }
 }

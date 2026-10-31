@@ -6,7 +6,9 @@ Expectation value of <S**2>     :     0.760000
 Ideal value S*(S+1) for S=0.5   :     0.750000
 Deviation                       :     0.010000
 FINAL SINGLE POINT ENERGY       -39.123456789000
-THE CP-SCF HAS CONVERGED
+     CP-SCF ITERATION   0:      0.000391713
+     CP-SCF ITERATION   1:      0.000034826
+               *** THE CP-SCF HAS CONVERGED ***
 -----------------------
 VIBRATIONAL FREQUENCIES
 -----------------------

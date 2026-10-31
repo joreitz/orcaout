@@ -90,7 +90,7 @@ fn out_without_inp_uses_embedded_input() {
 #[test]
 fn every_job_type_gets_its_own_header() {
     let dir = temp_dir("mixed");
-    copy_synthetic(&["opt_ok", "freq_ts", "optfreq_min", "nics", "fod", "scan", "tddft", "spincont"], &dir);
+    copy_synthetic(&["opt_ok", "freq_ts", "numfreq", "optfreq_min", "nics", "fod", "scan", "tddft", "spincont"], &dir);
     let o = orcaout(&[dir.to_str().unwrap()]);
     assert!(o.status.success());
 
@@ -103,7 +103,8 @@ fn every_job_type_gets_its_own_header() {
         ),
         (
             "outorca_freq.csv",
-            "NAME;JOB;METHOD;ENERGY;CHRG;M;S^2;SCFCONV;CPSCFCONV;ZPVE;dU;dH;TdS;dG;CHAR;IMAGS;RUNTIME\nfreq_ts;freq;r2scan-3c;-39.123456789;0;2;0.760;True;True;0.00964643;0.01248239;0.0134266;0.02136579;-0.00793919;TS;-512.34;120\n",
+            "NAME;JOB;METHOD;ENERGY;CHRG;M;S^2;SCFCONV;CPSCFCONV;ZPVE;dU;dH;TdS;dG;CHAR;IMAGS;RUNTIME\nfreq_ts;freq;r2scan-3c;-39.123456789;0;2;0.760;True;True;0.00964643;0.01248239;0.0134266;0.02136579;-0.00793919;TS;-512.34;120\n\
+             numfreq;freq;r2scan-3c;-39.123456789;0;2;0.760;True;;0.00964643;0.01248239;0.0134266;0.02136579;-0.00793919;TS;-512.34;120\n",
         ),
         (
             "outorca_optfreq.csv",
@@ -119,7 +120,7 @@ fn every_job_type_gets_its_own_header() {
         ),
         (
             "outorca_tddft.csv",
-            "NAME;JOB;METHOD;ENERGY;CHRG;M;S^2;SCFCONV;EXC[STATE,EV];BASIS\ntddft;tddft;wb97x-d3;-1.17;0;1;;True;[(1,12.408),(2,16.327)];def2-tzvp\n",
+            "NAME;JOB;METHOD;ENERGY;CHRG;M;S^2;SCFCONV;CPSCFCONV;EXC[STATE,EV];BASIS\ntddft;tddft;wb97x-d3;-1.17;0;1;;True;True;[(1,12.408),(2,16.327)];def2-tzvp\n",
         ),
     ];
     for (file, content) in expect {
@@ -138,7 +139,9 @@ fn every_job_type_gets_its_own_header() {
     let text = stdout(&o);
     assert!(text.contains("WARNING  spincont"), "{text}");
     assert!(text.contains("CHAR:   TS, IMAGS: -512.34"));
-    assert!(text.contains("8 job(s): 7 OK, 1 WARNING"));
+    assert!(text.contains("OK       numfreq"), "NumFreq without CP-SCF is not penalised:\n{text}");
+    assert!(!text.contains("CP-SCF"), "{text}");
+    assert!(text.contains("9 job(s): 8 OK, 1 WARNING"), "{text}");
 }
 
 #[test]
@@ -322,4 +325,63 @@ fn large_output_is_streamed() {
     assert!(csv.contains("big;sp;wb97x-d4rev;-4128.719797087585;-2;4;3.768;True"), "{csv}");
     assert!(stdout(&o).contains("WARNING  big"), "input name mismatch is reported:\n{}", stdout(&o));
     let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn real_tddft_output_with_uks_hint_line() {
+    // ORCA 6.0.1 prints "UHF/UKS reference: multiplicity estimated ..." between the
+    // header and the first STATE line; the first parser version stopped there.
+    let dir = temp_dir("tddft");
+    copy_fixture(&fixtures().join("tddft_uks"), "cl_si20et19_n0_1.sp.pbe0", &dir);
+    let o = orcaout(&[dir.to_str().unwrap()]);
+    assert!(o.status.success());
+    let text = stdout(&o);
+    assert!(text.contains("OK       cl_si20et19_n0_1.sp.pbe0"), "{text}");
+    assert!(text.contains("#states: 7"), "{text}");
+    assert_eq!(
+        read(&dir.join("outorca.csv")),
+        "NAME;JOB;METHOD;ENERGY;CHRG;M;S^2;SCFCONV;CPSCFCONV;EXC[STATE,EV];BASIS;SPEC[EV,FOSC];DISP;DIPOLE;RUNTIME\n\
+         cl_si20et19_n0_1.sp.pbe0;tddft;pbe0;-7752.36824903536;0;1;0.000;True;True;\
+         [(1,2.952),(2,2.962),(3,3.201),(4,3.212),(5,3.351),(129,4.838),(130,4.847)];ma-def2-tzvp;\
+         [(2.95163,0),(2.962001,0),(3.20077,0.010973602),(3.211695,0.012009639),(3.350784,0),(4.838284,0),(4.847203,0.002974608)];\
+         -0.304521096;3.620416647;92506.46\n"
+    );
+}
+
+fn orcaout_with_queue(args: &[&str], env: &[(&str, &str)]) -> Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_orcaout"));
+    cmd.arg("--no-color").args(args).env_remove("USER").env_remove("LOGNAME");
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    cmd.output().expect("binary runs")
+}
+
+#[test]
+fn squeue_problems_are_reported_not_swallowed() {
+    let dir = temp_dir("squeue");
+    copy_synthetic(&["opt_ok", "incomplete", "missing"], &dir);
+    let empty_path = temp_dir("empty-path");
+
+    // no user name at all
+    let o = orcaout_with_queue(&[dir.to_str().unwrap()], &[]);
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(err.contains("WARNING  squeue: neither USER nor LOGNAME is set"), "{err}");
+
+    // squeue not installed
+    let o = orcaout_with_queue(
+        &[dir.to_str().unwrap()],
+        &[("USER", "tester"), ("PATH", empty_path.to_str().unwrap())],
+    );
+    assert!(o.status.success(), "a missing squeue is not a program error");
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(err.contains("WARNING  squeue: `squeue` not found"), "{err}");
+    let text = stdout(&o);
+    assert!(text.contains("OK       opt_ok"), "{text}");
+    assert!(text.contains("queue status unknown (squeue failed), job may still be running"), "{text}");
+    assert!(text.contains("no .out file; queue status unknown"), "{text}");
+
+    // --no-queue: no warning
+    let o = orcaout(&[dir.to_str().unwrap()]);
+    assert!(!String::from_utf8_lossy(&o.stderr).contains("squeue"));
 }

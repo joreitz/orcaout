@@ -1,7 +1,13 @@
 NAME = tddft.inp
 |  1> ! wb97x-d3 def2-tzvp
 |  2>                          ****END OF INPUT****
-FINAL SINGLE POINT ENERGY        -1.170000000000
+------------------------------------------------------------------------------
+                        ORCA TD-DFT/TDA CALCULATION
+------------------------------------------------------------------------------
+------------------------
+DAVIDSON-DIAGONALIZATION
+------------------------
+      *** CONVERGENCE OF RESIDUAL NORM REACHED ***
 -----------------------------
 TD-DFT/TDA EXCITED STATES (SINGLETS)
 -----------------------------
@@ -14,6 +20,6 @@ STATE  2:  E=   0.600000 au     16.327 eV   131690.0 cm**-1 <S**2> =   0.000000
      0a ->   2a  :     0.980000
 
 -----------------------------------------------------------------------------
-ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS
------------------------------------------------------------------------------
+           *** ORCA-CIS/TD-DFT FINISHED WITHOUT ERROR ***
+FINAL SINGLE POINT ENERGY        -1.170000000000
                              ****ORCA TERMINATED NORMALLY****

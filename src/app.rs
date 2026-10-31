@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use rayon::prelude::*;
 
-use crate::analysis::{AnalysisOptions, JobReport, Observation, Status, evaluate};
+use crate::analysis::{AnalysisOptions, JobReport, Observation, QueueState, Status, evaluate};
 use crate::cli::Args;
 use crate::columns::{Table, build_table};
 use crate::input::{InputInfo, JobType, info_from_input, parse_input_text};
@@ -176,12 +176,11 @@ fn read_input(inp_path: &Path, observation: &Observation) -> (InputInfo, Vec<Str
 }
 
 /// Analyse one job (`<dir>/<stem>.{inp,out}`).
-pub fn process_job(dir: &Path, stem: &str, opts: &AnalysisOptions, queue: &Queue) -> JobReport {
+pub fn process_job(dir: &Path, stem: &str, opts: &AnalysisOptions, queue_state: QueueState) -> JobReport {
     let inp_path = dir.join(format!("{stem}.inp"));
     let out_path = dir.join(format!("{stem}.out"));
     let observation = observe_output(&out_path);
     let (input, notes) = read_input(&inp_path, &observation);
-    let queue_state = queue.lookup(stem, dir);
     let mut report = evaluate(stem, input, observation, queue_state, opts);
     if !notes.is_empty() {
         // informational, shown after the summary line
@@ -199,8 +198,17 @@ pub fn analyze_target(target: &Target, args: &Args, queue: &Queue) -> anyhow::Re
         Some(s) => s.clone(),
         None => discover_stems(&target.dir)?,
     };
-    let mut reports: Vec<JobReport> =
-        stems.par_iter().map(|stem| process_job(&target.dir, stem, &args.analysis, queue)).collect();
+    // Queue assignment uses every stem of the directory, so that the longest
+    // matching stem wins even when only some files were requested.
+    let all_stems = discover_stems(&target.dir).unwrap_or_else(|_| stems.clone());
+    let queue_states = queue.assign(&target.dir, &all_stems);
+    let mut reports: Vec<JobReport> = stems
+        .par_iter()
+        .map(|stem| {
+            let state = queue_states.get(stem).cloned().unwrap_or_default();
+            process_job(&target.dir, stem, &args.analysis, state)
+        })
+        .collect();
     reports.sort_by(|a, b| a.name.cmp(&b.name));
 
     let mut result = DirResult { dir: target.dir.clone(), reports, written: Vec::new(), io_errors: Vec::new() };
@@ -363,7 +371,15 @@ pub fn run(args: &Args) -> anyhow::Result<i32> {
         return Ok(1);
     }
 
-    let queue = if args.no_queue { Queue::default() } else { Queue::from_squeue() };
+    let queue = if args.no_queue {
+        Queue::disabled()
+    } else {
+        let load = Queue::from_squeue();
+        for w in &load.warnings {
+            eprintln!("WARNING  squeue: {w}");
+        }
+        load.queue
+    };
     let mut exit = 0;
 
     for target in &targets {

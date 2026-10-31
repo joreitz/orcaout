@@ -58,11 +58,11 @@ job types gets one file per type (`outorca_opt.csv`, `outorca_freq.csv`, …).
 | `optfreq` | opt + freq | `…;S^2;SCFCONV;GEOCONV;CPSCFCONV;ZPVE;dU;dH;TdS;dG;CHAR;IMAGS` |
 | `nmr` | `NMR` | `…;S^2;SCFCONV;CPSCFCONV;NUM_GHST_ATMS;NICS[ID,ISO]` |
 | `scan` | `%geom Scan` block | `…;S^2;SCFCONV;SCAN[COORD,E]` |
-| `tddft` | `TDDFT` keyword or `%tddft` block | `…;S^2;SCFCONV;EXC[STATE,EV]` |
+| `tddft` | `TDDFT` keyword or `%tddft` block | `…;S^2;SCFCONV;CPSCFCONV;EXC[STATE,EV]` |
 
 Optional columns are appended only when at least one row has a value:
 `BASIS`, `GEOCYCLES`, `DISP` (dispersion correction, Eh), `DIPOLE` (Debye),
-`RUNTIME` (s), `STATUS` (with `--all`).
+`RUNTIME` (s), `SPEC[EV,FOSC]` (TD-DFT), `STATUS` (with `--all`).
 
 Column semantics (as in the Python original):
 
@@ -70,13 +70,23 @@ Column semantics (as in the Python original):
 * `S^2` – last `<S**2>` (3 decimals). A deviation ≥ 0.10 from S(S+1) gives a warning.
 * `SCFCONV` – `True`, `notfully` (only with `-ncf`) or `False`.
 * `GEOCONV` – `THE OPTIMIZATION HAS CONVERGED` seen.
-* `CPSCFCONV` – `THE CP-SCF HAS CONVERGED` seen.
+* `CPSCFCONV` – convergence of the response solver that actually ran, empty if none ran:
+  * CP-SCF (analytic frequencies, NMR, TD-DFT gradients): started by `CP-SCF ITERATION   0`,
+    converged by `THE CP-SCF HAS CONVERGED`. `NumFreq` runs no CP-SCF, so the cell stays empty
+    and no warning is given.
+  * TD-DFT/CIS excitation energies come from a Davidson diagonalisation, not from a CP-SCF.
+    For `tddft` jobs the column reports the Davidson convergence
+    (`CONVERGENCE OF RESIDUAL NORM REACHED` / `ORCA-CIS/TD-DFT FINISHED WITHOUT ERROR`),
+    combined with the CP-SCF if one ran as well.
+  * A solver that started but did not converge is an ERROR.
 * `ZPVE`, `dU` (`Total correction`), `TdS` (`Final entropy term`), `dG` (`G-E(el)`) in Eh;
   `dH = dU + Thermal Enthalpy correction` (kT at the printed temperature when that line is missing).
 * `CHAR` – `MIN` (no imaginary mode), `TS` (one), `FAIL` (more); `IMAGS` – the imaginary frequencies, `|`-separated.
 * `NICS[ID,ISO]` – isotropic shieldings of the ghost atoms (`H:` syntax in the input), `[[id, iso], ...]`.
 * `SCAN[COORD,E]` – `[(coordinate,energy),...]` from *The Calculated Surface using the 'Actual Energy'*, ready for plotting.
-* `EXC[STATE,EV]` – `[(state,eV),...]` from the TD-DFT excited-state block.
+* `EXC[STATE,EV]` – `[(state,eV),...]` from the TD-DFT excited-state block (RKS singlet and triplet blocks are both kept).
+* `SPEC[EV,FOSC]` – `[(eV,fosc),...]` from `ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS`
+  (ORCA 6 prints eV; for ORCA 5 the wavenumber is converted with 1 eV = 8065.543937 cm⁻¹).
 
 ## Status logic
 
@@ -85,8 +95,24 @@ Column semantics (as in the Python original):
 | `OK` | terminated normally, SCF (and geometry) converged, nothing suspicious |
 | `WARNING` | spin contamination, `-ncf` accepted a not fully converged wave function, `.out` belongs to a different `.inp`, missing CP-SCF line, charge/multiplicity mismatch between `.inp` and `.out`, … |
 | `ERROR` | no normal termination, SCF/geometry not converged, error termination, input error, empty or unreadable `.out`, no `!` line, … |
-| `RUNNING` / `PENDING` | SLURM (`squeue`) lists a job whose name contains the file stem (running jobs must work in the same directory) |
+| `RUNNING` / `PENDING` | SLURM lists a job for this file stem in this directory (see below) |
 | `MISSING` | no `.out` and nothing in the queue |
+
+### SLURM queue
+
+`squeue -u $USER -h -o "%i|%j|%t|%Z"` is called once per run (job id, name, state, working directory).
+
+* A job belongs to the stem `mol_1` if its name is `mol_1` or starts with `mol_1.`
+  (`mol_10.sp.sh` does not). If several stems match (`x.sp`, `x.sp.pbe0`), the longest wins.
+* Running **and** pending jobs only count if their working directory is the analysed directory.
+* If `squeue` is missing or fails, a `WARNING  squeue: ...` line goes to stderr and unfinished
+  jobs are reported with "queue status unknown". `--no-queue` skips the lookup without warning.
+
+Check once on your cluster that the format is understood (four `|`-separated fields per line):
+
+```bash
+squeue -u $USER -h -o "%i|%j|%t|%Z"
+```
 
 Recognised error lines include `ORCA finished by error termination in …`,
 `aborting the run`, `SCF NOT CONVERGED`, `The optimization did not converge`,

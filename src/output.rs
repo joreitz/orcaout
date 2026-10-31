@@ -90,6 +90,8 @@ pub struct ExcitedState {
     pub energy_ev: f64,
     pub energy_cm: f64,
     pub s2: Option<f64>,
+    /// `Mult n` printed by ORCA 6 for UKS references, or the block (SINGLETS/TRIPLETS).
+    pub mult: Option<u32>,
 }
 
 /// Everything extracted from an ORCA output.  All fields are optional or
@@ -125,7 +127,11 @@ pub struct OutputData {
     /// Last `VIBRATIONAL FREQUENCIES` block (cm**-1, including zero modes).
     pub frequencies: Vec<f64>,
     pub thermo: Thermo,
+    /// Last CP-SCF: `None` = no CP-SCF ran, `Some(false)` = started but not
+    /// (yet) converged, `Some(true)` = `THE CP-SCF HAS CONVERGED`.
     pub cpscf_converged: Option<bool>,
+    /// Last TD-DFT/CIS Davidson diagonalisation, same convention as `cpscf_converged`.
+    pub tddft_converged: Option<bool>,
     pub dipole_debye: Option<f64>,
     pub dispersion_eh: Option<f64>,
     /// `CHEMICAL SHIELDING SUMMARY` rows.
@@ -134,6 +140,8 @@ pub struct OutputData {
     /// Relaxed surface scan: (coordinate value, energy) per step.
     pub scan_surface: Vec<(f64, f64)>,
     pub tddft_states: Vec<ExcitedState>,
+    /// Absorption spectrum via transition electric dipole moments: (energy in eV, oscillator strength).
+    pub absorption: Vec<(f64, f64)>,
     /// Error lines recognised in the output (deduplicated, capped).
     pub errors: Vec<String>,
     /// Problems of the parser itself (e.g. unparsable numbers).
@@ -166,6 +174,7 @@ enum Line {
     ShieldingHeader,
     ScanHeader,
     TddftHeader,
+    AbsorptionHeader,
     // single-line quantities
     FinalEnergy,
     ScfConverged,
@@ -182,7 +191,10 @@ enum Line {
     GeomConverged,
     GeomCycle,
     GeomAfterCycles,
+    CpscfStart,
     CpscfConverged,
+    DavidsonStart,
+    DavidsonConverged,
     Terminated,
     Dipole,
     Dispersion,
@@ -216,6 +228,7 @@ static LINE_PATTERNS: &[(Line, &str)] = &[
     (Line::ShieldingHeader, r"CHEMICAL SHIELDING SUMMARY"),
     (Line::ScanHeader, r"The Calculated Surface using the 'Actual Energy'"),
     (Line::TddftHeader, r"TD-DFT/TDA EXCITED STATES|TD-DFT EXCITED STATES|CIS-EXCITED STATES"),
+    (Line::AbsorptionHeader, r"^\s*ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS"),
     (Line::FinalEnergy, r"FINAL SINGLE POINT ENERGY\s+(-?\d+\.\d+)\s*(.*)$"),
     (Line::ScfConverged, r"SCF CONVERGED AFTER\s+(\d+)\s+CYCLES"),
     (Line::ScfNotConverged, r"SCF NOT CONVERGED AFTER\s+(\d+)\s+CYCLES"),
@@ -231,7 +244,10 @@ static LINE_PATTERNS: &[(Line, &str)] = &[
     (Line::GeomConverged, r"THE OPTIMIZATION HAS CONVERGED"),
     (Line::GeomCycle, r"GEOMETRY OPTIMIZATION CYCLE\s+(\d+)"),
     (Line::GeomAfterCycles, r"\(AFTER\s+(\d+)\s+CYCLES\)"),
+    (Line::CpscfStart, r"CP-SCF ITERATION\s+0\b"),
     (Line::CpscfConverged, r"THE CP-SCF HAS CONVERGED"),
+    (Line::DavidsonStart, r"DAVIDSON-DIAGONALIZATION|ORCA TD-DFT/TDA CALCULATION|ORCA TD-DFT CALCULATION|ORCA CIS CALCULATION"),
+    (Line::DavidsonConverged, r"CONVERGENCE OF RESIDUAL NORM REACHED|ORCA-CIS/TD-DFT FINISHED WITHOUT ERROR"),
     (Line::Terminated, r"ORCA TERMINATED NORMALLY"),
     (Line::Dipole, r"Magnitude \(Debye\)\s*:\s*(-?\d+\.\d+)"),
     (Line::Dispersion, r"^\s*Dispersion correction\s+(-?\d+\.\d+)"),
@@ -271,6 +287,8 @@ static LINE_PATTERNS: &[(Line, &str)] = &[
     (Line::Error, r"(?i)oom-kill"),
     (Line::Error, r"CP-SCF .*NOT CONVERGED"),
     (Line::Error, r"THE CP-SCF HAS NOT CONVERGED"),
+    (Line::Error, r"(?i)davidson.*not\s+converged"),
+    (Line::Error, r"(?i)\bCIS\b.*not\s+converged"),
     (Line::Error, r"Error \(ORCA_\w+\)"),
     (Line::Error, r"^\s*Error\s*:"),
     (Line::Error, r"^\[file .*\]:"),
@@ -304,12 +322,22 @@ mod patterns {
     re!(FREQ_LINE, r"^\s*(\d+):\s+(-?\d+\.\d+)\s+cm\*\*-1");
     re!(SHIELDING_LINE, r"^\s*(\d+)\s+([A-Za-z]{1,2}:?)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s*$");
     re!(SCAN_LINE, r"^\s*(-?\d+\.\d+)\s+(-?\d+\.\d+)\s*$");
-    re!(TDDFT_STATE, r"^\s*STATE\s+(\d+):\s+E=\s+(-?\d+\.\d+)\s+au\s+(-?\d+\.\d+)\s+eV\s+(-?\d+\.\d+)\s+cm\*\*-1(?:\s+<S\*\*2>\s*=\s*(-?\d+\.\d+))?");
+    re!(TDDFT_STATE, r"^\s*STATE\s+(\d+):\s+E=\s+(-?\d+\.\d+)\s+au\s+(-?\d+\.\d+)\s+eV\s+(-?\d+\.\d+)\s+cm\*\*-1(?:\s+<S\*\*2>\s*=\s*(-?\d+\.\d+))?(?:\s+Mult\s+(\d+))?");
+    // ORCA 6: "  0-1A  ->  3-1A    3.200770   25816.0   387.4   0.010973602 ..."  (eV, cm-1, nm, fosc)
+    re!(ABS_LINE_ORCA6, r"^\s*\S+\s+->\s+\S+\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)");
+    // ORCA 5: "   3   25816.0    387.4   0.010973602 ..."  (state, cm-1, nm, fosc)
+    re!(ABS_LINE_ORCA5, r"^\s*(\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)");
 }
 
 use patterns::*;
 
 const MAX_ERRORS: usize = 25;
+
+/// 1 eV in cm**-1 (CODATA 2018).
+pub const EV_IN_CM: f64 = 8065.543937;
+
+/// Lines tolerated between a section header and its first data row.
+const MAX_SECTION_PREAMBLE: u32 = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Section {
@@ -320,6 +348,7 @@ enum Section {
     Shielding,
     ScanSurface,
     TddftStates,
+    Absorption,
 }
 
 /// Incremental parser; call [`Parser::feed`] for every line and
@@ -333,6 +362,12 @@ pub struct Parser {
     spin_window: u8,
     embedded_input: Vec<String>,
     embedded_input_done: bool,
+    /// Lines seen in the current section before its first data row.
+    preamble_lines: u32,
+    /// The current section already produced a data row.
+    section_has_rows: bool,
+    /// Multiplicity of the current TD-DFT block from its header (SINGLETS/TRIPLETS).
+    tddft_block_mult: Option<u32>,
 }
 
 impl Default for Parser {
@@ -349,6 +384,9 @@ impl Parser {
             spin_window: 0,
             embedded_input: Vec::new(),
             embedded_input_done: false,
+            preamble_lines: 0,
+            section_has_rows: false,
+            tddft_block_mult: None,
         }
     }
 
@@ -456,18 +494,53 @@ impl Parser {
                     let ev = self.parse_f64(&c[3], "excitation energy (eV)");
                     let cm = self.parse_f64(&c[4], "excitation energy (cm-1)");
                     let s2 = c.get(5).and_then(|m| m.as_str().parse::<f64>().ok());
+                    let mult = c.get(6).and_then(|m| m.as_str().parse::<u32>().ok()).or(self.tddft_block_mult);
                     if let (Ok(n), Some(ev), Some(cm)) = (c[1].parse::<u32>(), ev, cm) {
-                        self.data.tddft_states.push(ExcitedState { state: n, energy_ev: ev, energy_cm: cm, s2 });
+                        self.data.tddft_states.push(ExcitedState { state: n, energy_ev: ev, energy_cm: cm, s2, mult });
                     }
+                    self.section_has_rows = true;
                     return;
                 }
-                if line.trim().is_empty() || line.contains("the weight of the individual excitations") || line.trim_start().starts_with('-') {
+                let t = line.trim();
+                if self.section_has_rows {
+                    // blank lines and "  309a -> 310a  :  0.438" contribution lines
+                    if t.is_empty() || t.starts_with(|c: char| c.is_ascii_digit()) {
+                        return;
+                    }
+                    self.section = Section::None;
+                } else {
+                    // header, dashes and hints such as "UHF/UKS reference: multiplicity estimated ..."
+                    self.preamble_lines += 1;
+                    if self.preamble_lines > MAX_SECTION_PREAMBLE {
+                        self.section = Section::None;
+                    }
+                }
+            }
+            Section::Absorption => {
+                let row = if let Some(c) = ABS_LINE_ORCA6.captures(line) {
+                    let ev = self.parse_f64(&c[1], "absorption energy (eV)");
+                    let f = self.parse_f64(&c[4], "oscillator strength");
+                    ev.zip(f)
+                } else if let Some(c) = ABS_LINE_ORCA5.captures(line) {
+                    let cm = self.parse_f64(&c[2], "absorption energy (cm-1)");
+                    let f = self.parse_f64(&c[4], "oscillator strength");
+                    cm.map(|cm| cm / EV_IN_CM).zip(f)
+                } else {
+                    None
+                };
+                if let Some(r) = row {
+                    self.data.absorption.push(r);
+                    self.section_has_rows = true;
                     return;
                 }
-                if line.trim_start().chars().next().is_some_and(|c| c.is_ascii_digit()) {
-                    return; // "  12a ->  13a  :  0.98" contribution lines
+                if self.section_has_rows {
+                    self.section = Section::None;
+                } else {
+                    self.preamble_lines += 1;
+                    if self.preamble_lines > MAX_SECTION_PREAMBLE {
+                        self.section = Section::None;
+                    }
                 }
-                self.section = Section::None;
             }
             Section::None => {}
         }
@@ -494,6 +567,12 @@ impl Parser {
             }
         }
         self.tick_spin_window();
+    }
+
+    fn open_section(&mut self, section: Section) {
+        self.section = section;
+        self.preamble_lines = 0;
+        self.section_has_rows = false;
     }
 
     /// Count down the window in which `Ideal value`/`Deviation` are accepted.
@@ -533,8 +612,19 @@ impl Parser {
                 return true;
             }
             Line::TddftHeader => {
-                self.data.tddft_states.clear();
-                self.section = Section::TddftStates;
+                // RKS jobs print a SINGLETS and a TRIPLETS block: keep both.
+                if line.contains("TRIPLETS") {
+                    self.tddft_block_mult = Some(3);
+                } else {
+                    self.data.tddft_states.clear();
+                    self.tddft_block_mult = if line.contains("SINGLETS") { Some(1) } else { None };
+                }
+                self.open_section(Section::TddftStates);
+                return true;
+            }
+            Line::AbsorptionHeader => {
+                self.data.absorption.clear();
+                self.open_section(Section::Absorption);
                 return true;
             }
             Line::FinalEnergy => {
@@ -583,7 +673,14 @@ impl Parser {
             Line::BasisDim => self.data.basis_dimension = g(1).parse().ok(),
             Line::GeomConverged => self.data.geom_converged = true,
             Line::GeomCycle | Line::GeomAfterCycles => self.data.geom_cycles = g(1).parse().ok(),
+            Line::CpscfStart => self.data.cpscf_converged = Some(false),
             Line::CpscfConverged => self.data.cpscf_converged = Some(true),
+            Line::DavidsonStart => {
+                if self.data.tddft_converged != Some(false) {
+                    self.data.tddft_converged = Some(false);
+                }
+            }
+            Line::DavidsonConverged => self.data.tddft_converged = Some(true),
             Line::Terminated => self.data.terminated_normally = true,
             Line::Dipole => self.data.dipole_debye = self.parse_f64(g(1), "dipole moment"),
             Line::Dispersion => self.data.dispersion_eh = self.parse_f64(g(1), "dispersion correction"),
@@ -883,5 +980,85 @@ G-E(el)                           ...      0.00346002 Eh       2.17 kcal/mol
         assert_eq!(d.final_energies[0].energy, -1.5);
         assert!(d.terminated_normally);
         assert_eq!(d.lines_read, 3);
+    }
+
+    #[test]
+    fn tddft_hint_line_before_first_state_is_skipped() {
+        let text = "-------------------------\nTD-DFT/TDA EXCITED STATES\n-------------------------\n\nthe weight of the individual excitations are printed if larger than 1.0e-02\n\nUHF/UKS reference: multiplicity estimated based on rounded <S**2> value, RELEVANCE IS LIMITED!\n\nSTATE  1:  E=   0.108470 au      2.952 eV    23806.5 cm**-1 <S**2> =   2.000000 Mult 3\n   309a -> 310a  :     0.438082 (c= -0.66187792)\n\nSTATE  3:  E=   0.117626 au      3.201 eV    25816.0 cm**-1 <S**2> =  -0.000000 Mult 1\n   309a -> 310a  :     0.478065 (c=  0.69142237)\n\n\n------------------------------------------\nNATURAL TRANSITION ORBITALS FOR STATE    1\n";
+        let d = parse_output_text(text);
+        assert_eq!(d.tddft_states.len(), 2);
+        assert_eq!(d.tddft_states[0].mult, Some(3));
+        assert_eq!(d.tddft_states[1].state, 3);
+        assert_eq!(d.tddft_states[1].s2, Some(-0.0));
+        assert_eq!(d.tddft_states[1].mult, Some(1));
+    }
+
+    #[test]
+    fn tddft_section_gives_up_after_long_preamble() {
+        let mut text = String::from("TD-DFT EXCITED STATES\n");
+        for i in 0..40 {
+            text.push_str(&format!("noise line {i}\n"));
+        }
+        text.push_str("STATE  1:  E=   0.1 au      2.000 eV    16000.0 cm**-1\n****ORCA TERMINATED NORMALLY****\n");
+        let d = parse_output_text(&text);
+        assert!(d.tddft_states.is_empty());
+        assert!(d.terminated_normally, "lines after an abandoned section are still dispatched");
+    }
+
+    #[test]
+    fn error_inside_tddft_preamble_is_not_lost() {
+        let d = parse_output_text("TD-DFT/TDA EXCITED STATES\n\nORCA finished by error termination in CIS\n");
+        assert_eq!(d.errors, vec!["ORCA finished by error termination in CIS"]);
+    }
+
+    #[test]
+    fn rks_singlet_and_triplet_blocks_are_both_kept() {
+        let text = "TD-DFT/TDA EXCITED STATES (SINGLETS)\n\nSTATE  1:  E=   0.2 au      5.442 eV    43893.0 cm**-1\n\nTD-DFT/TDA EXCITED STATES (TRIPLETS)\n\nSTATE  1:  E=   0.1 au      2.721 eV    21946.0 cm**-1\n\nfoo\n";
+        let d = parse_output_text(text);
+        assert_eq!(d.tddft_states.len(), 2);
+        assert_eq!(d.tddft_states[0].mult, Some(1));
+        assert_eq!(d.tddft_states[1].mult, Some(3));
+        // a new singlet block (e.g. next optimisation cycle) starts over
+        let d = parse_output_text(&format!("{text}TD-DFT/TDA EXCITED STATES (SINGLETS)\nSTATE  1:  E=   0.3 au      8.000 eV    64000.0 cm**-1\n"));
+        assert_eq!(d.tddft_states.len(), 1);
+        assert_eq!(d.tddft_states[0].energy_ev, 8.0);
+    }
+
+    #[test]
+    fn davidson_convergence_states() {
+        assert_eq!(parse_output_text("FINAL SINGLE POINT ENERGY -1.0\n").tddft_converged, None);
+        assert_eq!(parse_output_text("DAVIDSON-DIAGONALIZATION\n   ****Iteration    0****\n").tddft_converged, Some(false));
+        let d = parse_output_text("ORCA TD-DFT/TDA CALCULATION\nDAVIDSON-DIAGONALIZATION\n      *** CONVERGENCE OF RESIDUAL NORM REACHED ***\n");
+        assert_eq!(d.tddft_converged, Some(true));
+        let d = parse_output_text("DAVIDSON-DIAGONALIZATION\n           *** ORCA-CIS/TD-DFT FINISHED WITHOUT ERROR ***\n");
+        assert_eq!(d.tddft_converged, Some(true));
+    }
+
+    #[test]
+    fn cpscf_is_none_unless_it_ran() {
+        assert_eq!(parse_output_text("VIBRATIONAL FREQUENCIES\n   6:  100.00 cm**-1\n").cpscf_converged, None);
+        let d = parse_output_text("     CP-SCF ITERATION   0:      0.000391713\n     CP-SCF ITERATION   1:      0.000034826\n");
+        assert_eq!(d.cpscf_converged, Some(false));
+        let d = parse_output_text("     CP-SCF ITERATION   0:      0.0004\n *** THE CP-SCF HAS CONVERGED ***\n     CP-SCF ITERATION   0:      0.0004\n");
+        assert_eq!(d.cpscf_converged, Some(false), "a second CP-SCF without convergence counts");
+        let d = parse_output_text("     CP-SCF ITERATION  10:      0.0004\n");
+        assert_eq!(d.cpscf_converged, None, "only iteration 0 marks a start");
+    }
+
+    #[test]
+    fn absorption_spectrum_orca6_format() {
+        let text = "----\n                     ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS    \n----\n     Transition      Energy     Energy  Wavelength fosc(D2)      D2        DX        DY        DZ   \n                      (eV)      (cm-1)    (nm)                 (au**2)    (au)      (au)      (au)  \n----\n  0-1A  ->  1-3A    2.951630   23806.5   420.1   0.000000000   0.00000  -0.00000   0.00000  -0.00000\n  0-1A  ->  3-1A    3.200770   25816.0   387.4   0.010973602   0.13994  -0.27288  -0.14701   0.20944\n\n----\n                     ABSORPTION SPECTRUM VIA TRANSITION VELOCITY DIPOLE MOMENTS    \n----\n  0-1A  ->  3-1A    3.200770   25816.0   387.4   0.001315629   0.00023  -0.01103  -0.00503   0.00923\n----\n                     CD SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS    \n----\n  0-1A  ->  3-1A    3.200770   25816.0   387.4   -3.74797  -0.25102   0.53245   0.08466\n";
+        let d = parse_output_text(text);
+        assert_eq!(d.absorption, vec![(2.95163, 0.0), (3.20077, 0.010973602)]);
+    }
+
+    #[test]
+    fn absorption_spectrum_orca5_format_converts_wavenumbers() {
+        let text = "ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS\n-----\nState   Energy    Wavelength  fosc         T2        TX        TY        TZ\n        (cm-1)      (nm)                 (au**2)    (au)      (au)      (au)\n-----\n   1   25816.0    387.4   0.010973602   0.13994  -0.27288  -0.14701   0.20944\n   2   80655.4    124.0   0.100000000   0.10000   0.10000   0.10000   0.10000\n\n";
+        let d = parse_output_text(text);
+        assert_eq!(d.absorption.len(), 2);
+        assert!((d.absorption[0].0 - 25816.0 / EV_IN_CM).abs() < 1e-12);
+        assert!((d.absorption[1].0 - 10.0).abs() < 1e-4);
+        assert_eq!(d.absorption[0].1, 0.010973602);
     }
 }

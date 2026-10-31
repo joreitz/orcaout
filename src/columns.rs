@@ -56,13 +56,10 @@ pub static COLUMNS: &[Column] = &[
     Column { name: "SCFCONV", value: |r| r.scf.map(|s| s.as_str().to_string()) },
     Column { name: "GEOCONV", value: |r| out(r).filter(|_| is_opt(r)).map(|o| bool_str(o.geom_converged)) },
     Column { name: "GEOCYCLES", value: |r| out(r).filter(|_| is_opt(r)).and_then(|o| o.geom_cycles).map(|c| c.to_string()) },
+    // CP-SCF (analytic freq, NMR) or, for TD-DFT, the Davidson solver; empty if none ran.
     Column {
         name: "CPSCFCONV",
-        value: |r| {
-            out(r)
-                .filter(|_| r.job_type.has_frequencies() || r.job_type == JobType::Nmr)
-                .map(|o| bool_str(o.cpscf_converged == Some(true)))
-        },
+        value: |r| out(r).and_then(|o| crate::analysis::response_convergence(o, r.job_type)).map(bool_str),
     },
     Column { name: "ZPVE", value: |r| r.thermo.map(|t| format!("{}", t.zpve)) },
     Column { name: "dU", value: |r| r.thermo.map(|t| format!("{}", t.du)) },
@@ -94,6 +91,10 @@ pub static COLUMNS: &[Column] = &[
                 .map(|o| fmt_pairs(o.tddft_states.iter().map(|s| (s.state, s.energy_ev))))
         },
     },
+    Column {
+        name: "SPEC[EV,FOSC]",
+        value: |r| out(r).filter(|o| !o.absorption.is_empty()).map(|o| fmt_pairs(o.absorption.iter().copied())),
+    },
     Column { name: "DISP", value: |r| out(r).and_then(|o| o.dispersion_eh).map(|d| format!("{d}")) },
     Column { name: "DIPOLE", value: |r| out(r).and_then(|o| o.dipole_debye).map(|d| format!("{d}")) },
     Column { name: "RUNTIME", value: |r| out(r).and_then(|o| o.run_time_s).map(|t| format!("{t}")) },
@@ -114,7 +115,7 @@ const OPTFREQ: &[&str] = &[
 const NMR: &[&str] =
     &["NAME", "JOB", "METHOD", "ENERGY", "CHRG", "M", "S^2", "SCFCONV", "CPSCFCONV", "NUM_GHST_ATMS", "NICS[ID,ISO]"];
 const SCAN: &[&str] = &["NAME", "JOB", "METHOD", "ENERGY", "CHRG", "M", "S^2", "SCFCONV", "SCAN[COORD,E]"];
-const TDDFT: &[&str] = &["NAME", "JOB", "METHOD", "ENERGY", "CHRG", "M", "S^2", "SCFCONV", "EXC[STATE,EV]"];
+const TDDFT: &[&str] = &["NAME", "JOB", "METHOD", "ENERGY", "CHRG", "M", "S^2", "SCFCONV", "CPSCFCONV", "EXC[STATE,EV]"];
 const INVALID: &[&str] = &["NAME", "JOB"];
 
 /// Columns that are always written for a job type, in order.

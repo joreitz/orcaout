@@ -2,7 +2,9 @@ NAME = nics.inp
 |  1> ! pbe0 def2-tzvp nmr
 |  2>                          ****END OF INPUT****
 FINAL SINGLE POINT ENERGY       -77.000000000000
-THE CP-SCF HAS CONVERGED
+     CP-SCF ITERATION   0:      0.000391713
+     CP-SCF ITERATION   1:      0.000034826
+               *** THE CP-SCF HAS CONVERGED ***
 --------------------------------
 CHEMICAL SHIELDING SUMMARY (ppm)
 --------------------------------

@@ -1,0 +1,9 @@
+Real ORCA 6.0.1 output: UKS PBE0-D4/ma-def2-TZVP TD-DFT/TDA single point
+(130 roots, CPCM(DCM), 154 atoms, closed-shell singlet on a UKS reference).
+
+Shortened for the repository: contributor list, coordinate blocks, Mulliken
+tables, Davidson iterations 1-5, excited states 6-128 (and their NTO blocks),
+the matching rows of the spectra tables and the citation list are cut.
+The header of the excited-state block (including the line
+"UHF/UKS reference: multiplicity estimated ...", which broke the first parser
+version) is unchanged.  The .inp file is the input echoed in the .out.

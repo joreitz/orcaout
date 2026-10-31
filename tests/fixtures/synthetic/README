@@ -8,11 +8,12 @@ analysis and citation blocks only).
   opt_ok        converged optimisation, writes opt_ok.best.xyz
   opt_fail      optimisation hit the cycle limit
   freq_ts       UKS frequency job with one imaginary mode + thermochemistry
+  numfreq       same as freq_ts but numerical frequencies: no CP-SCF in the output
   optfreq_min   opt + freq, minimum
   nics          NMR with two ghost atoms (NICS)
   fod           FOD single point (N_FOD)
   scan          relaxed surface scan, three steps
-  tddft         two excited states
+  tddft         two excited states, Davidson converged
   scf_fail      SCF not converged, error termination
   notfully      "Wavefunction not fully converged" (accepted only with -ncf)
   incomplete    truncated output (job killed or still running)
