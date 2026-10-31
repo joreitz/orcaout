@@ -1,0 +1,6 @@
+# expected: Nmr
+! pbe0 def2-tzvp nmr
+* xyz 0 1
+H 0.0 0.0 0.0
+H 0.0 0.0 0.74
+*

@@ -1,0 +1,6 @@
+# expected: Opt   (opt is the last token; the Python version detected Sp here)
+! wb97x-3c opt
+* xyz 0 1
+H 0.0 0.0 0.0
+H 0.0 0.0 0.74
+*

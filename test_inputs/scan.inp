@@ -1,0 +1,11 @@
+# expected: Scan   (contains opt, but the scan takes precedence)
+! r2scan-3c opt
+%geom
+  Scan
+    B 0 1 = 0.7, 1.5, 9
+  end
+end
+* xyz 0 1
+H 0.0 0.0 0.0
+H 0.0 0.0 0.74
+*

@@ -1,0 +1,9 @@
+# expected: Tddft
+! wb97x-d3 def2-tzvp
+%tddft
+  nroots 10
+end
+* xyz 0 1
+H 0.0 0.0 0.0
+H 0.0 0.0 0.74
+*

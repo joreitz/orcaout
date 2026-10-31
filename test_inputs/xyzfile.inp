@@ -1,0 +1,3 @@
+# expected: Opt   (coordinates from an external file)
+! r2scan-3c opt
+* xyzfile 0 1 h2.xyz

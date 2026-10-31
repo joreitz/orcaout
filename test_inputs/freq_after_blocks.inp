@@ -1,0 +1,8 @@
+# expected: Freq   (! line is not the first line)
+%pal nprocs 4 end
+%maxcore 2000
+! r2scan-3c freq
+* xyz 0 1
+H 0.0 0.0 0.0
+H 0.0 0.0 0.74
+*

@@ -1,0 +1,9 @@
+# expected: Invalid   (no ! line at all)
+%method
+  method dft
+  functional pbe0
+end
+* xyz 0 1
+H 0.0 0.0 0.0
+H 0.0 0.0 0.74
+*

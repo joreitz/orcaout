@@ -1,0 +1,6 @@
+# expected: Sp
+! r2scan-3c
+* xyz 0 1
+H 0.0 0.0 0.0
+H 0.0 0.0 0.74
+*

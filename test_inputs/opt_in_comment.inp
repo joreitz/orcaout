@@ -1,0 +1,6 @@
+# expected: Sp   (opt only appears in a comment)
+! r2scan-3c   # opt freq later
+* xyz 0 1
+H 0.0 0.0 0.0
+H 0.0 0.0 0.74
+*

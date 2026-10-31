@@ -1,0 +1,9 @@
+# expected: Ftdft   (Fermi smearing via block)
+! r2scan-3c
+%scf
+  SmearTemp 5000
+end
+* xyz 0 1
+H 0.0 0.0 0.0
+H 0.0 0.0 0.74
+*

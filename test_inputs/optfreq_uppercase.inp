@@ -1,0 +1,6 @@
+# expected: Optfreq   (upper case)
+! R2SCAN-3C OPT FREQ
+* xyz 0 1
+H 0.0 0.0 0.0
+H 0.0 0.0 0.74
+*
