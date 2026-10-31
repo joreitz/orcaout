@@ -1,0 +1,6 @@
+NAME = fod.inp
+|  1> ! fod
+|  2>                          ****END OF INPUT****
+FINAL SINGLE POINT ENERGY        -1.100000000000
+N_FOD = 0.123456
+                             ****ORCA TERMINATED NORMALLY****

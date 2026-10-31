@@ -1,0 +1,6 @@
+Real ORCA 6.1.0 output (UKS wB97X-D4rev/def2-QZVPPD single point of a
+La/Co complex, 110 atoms, charge -2, quartet, 94 SCF cycles).
+
+Shortened for the repository: the contributor list, the A.U. coordinate
+block, the Mulliken charge / overlap tables and the citation list are cut to
+a few lines.  Every section the parser reads is unchanged.

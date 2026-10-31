@@ -1,0 +1,19 @@
+NAME = tddft.inp
+|  1> ! wb97x-d3 def2-tzvp
+|  2>                          ****END OF INPUT****
+FINAL SINGLE POINT ENERGY        -1.170000000000
+-----------------------------
+TD-DFT/TDA EXCITED STATES (SINGLETS)
+-----------------------------
+
+the weight of the individual excitations are printed if larger than 1.0e-02
+
+STATE  1:  E=   0.456000 au     12.408 eV   100080.0 cm**-1 <S**2> =   0.000000
+     0a ->   1a  :     0.990000
+STATE  2:  E=   0.600000 au     16.327 eV   131690.0 cm**-1 <S**2> =   0.000000
+     0a ->   2a  :     0.980000
+
+-----------------------------------------------------------------------------
+ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS
+-----------------------------------------------------------------------------
+                             ****ORCA TERMINATED NORMALLY****

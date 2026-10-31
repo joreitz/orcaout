@@ -1,0 +1,19 @@
+NAME = nics.inp
+|  1> ! pbe0 def2-tzvp nmr
+|  2>                          ****END OF INPUT****
+FINAL SINGLE POINT ENERGY       -77.000000000000
+THE CP-SCF HAS CONVERGED
+--------------------------------
+CHEMICAL SHIELDING SUMMARY (ppm)
+--------------------------------
+
+
+  Nucleus  Element    Isotropic     Anisotropy
+  -------  -------  ------------   ------------
+      0       C          55.123        120.500
+      1       C          55.123        120.500
+      2       H         -10.250          3.100
+      3       H          -3.750          1.200
+
+Timings for individual modules:
+                             ****ORCA TERMINATED NORMALLY****

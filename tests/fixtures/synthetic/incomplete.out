@@ -1,0 +1,9 @@
+NAME = incomplete.inp
+|  1> ! r2scan-3c opt
+|  2>                          ****END OF INPUT****
+                    *    GEOMETRY OPTIMIZATION CYCLE   4    *
+               *           SCF CONVERGED AFTER   7 CYCLES          *
+FINAL SINGLE POINT ENERGY        -1.164000000001
+                    *    GEOMETRY OPTIMIZATION CYCLE   5    *
+    1    -1.1640000000     0.00e+00  1.60e-02  3.62e+00  5.68e-01  0.900 2.2
+    2    -1.1641000000    -7.91e-01  2.31e-02  4.53e+00  5.09e-01  0.800 1.5

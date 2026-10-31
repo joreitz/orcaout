@@ -1,0 +1,8 @@
+! pbe0 def2-tzvp nmr
+%eprnmr nuclei = all H {shift} end
+* xyz 0 1
+C 0.0 0.0 0.0
+C 1.4 0.0 0.0
+H: 0.7 0.0 1.0
+H: 0.7 0.0 2.0
+*

@@ -1,0 +1,12 @@
+NAME = scf_fail.inp
+|  1> ! uks b3lyp def2-svp
+|  2>                          ****END OF INPUT****
+  125  -150.1234 ...
+               *****************************************************
+               *                     ERROR                         *
+               *        SCF NOT CONVERGED AFTER 125 CYCLES         *
+               *****************************************************
+ORCA finished by error termination in SCF
+Calling Command: mpirun -np 4 orca_scf_mpi scf_fail.gbw
+[file orca_tools/qcmsg.cpp, line 394]: 
+  .... aborting the run
