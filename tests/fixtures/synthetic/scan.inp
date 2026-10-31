@@ -1,0 +1,10 @@
+! r2scan-3c opt
+%geom
+  Scan
+    B 0 1 = 0.7, 0.9, 3
+  end
+end
+* xyz 0 1
+H 0.0 0.0 0.0
+H 0.0 0.0 0.74
+*

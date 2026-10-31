@@ -1,0 +1,9 @@
+NAME = input_error.inp
+|  1> ! r2scan-3c optt
+|  2>                          ****END OF INPUT****
+
+----------------------------------------------------------------------------
+                         ! INPUT ERROR !
+----------------------------------------------------------------------------
+UNRECOGNIZED OR DUPLICATED KEYWORD(S) IN SIMPLE INPUT LINE
+    OPTT

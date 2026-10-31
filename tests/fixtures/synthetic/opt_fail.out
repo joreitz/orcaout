@@ -1,0 +1,10 @@
+NAME = opt_fail.inp
+|  1> ! r2scan-3c opt
+|  2>                          ****END OF INPUT****
+                    *    GEOMETRY OPTIMIZATION CYCLE   1    *
+FINAL SINGLE POINT ENERGY        -1.164000000001
+                    *    GEOMETRY OPTIMIZATION CYCLE   50    *
+FINAL SINGLE POINT ENERGY        -1.164900000001
+The optimization did not converge but reached the maximum number of optimization cycles (50)
+                             ****ORCA TERMINATED NORMALLY****
+TOTAL RUN TIME: 0 days 0 hours 1 minutes 2 seconds 0 msec

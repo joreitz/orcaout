@@ -1,0 +1,7 @@
+NAME = notfully.inp
+|  1> ! uks b3lyp def2-svp
+|  2>                          ****END OF INPUT****
+Expectation value of <S**2>     :     2.010000
+Ideal value S*(S+1) for S=1.0   :     2.000000
+Deviation                       :     0.010000
+FINAL SINGLE POINT ENERGY      -150.123456000000 (Wavefunction not fully converged!)

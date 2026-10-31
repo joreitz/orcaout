@@ -1,0 +1,31 @@
+NAME = optfreq_min.inp
+|  1> ! r2scan-3c opt freq
+|  2>                          ****END OF INPUT****
+                    *    GEOMETRY OPTIMIZATION CYCLE   1    *
+FINAL SINGLE POINT ENERGY        -1.164000000001
+                    ***        THE OPTIMIZATION HAS CONVERGED     ***
+                    ***               (AFTER   3 CYCLES)                ***
+---------------------------------
+CARTESIAN COORDINATES (ANGSTROEM)
+---------------------------------
+  H      0.000000    0.000000    0.000000
+  H      0.000000    0.000000    0.750000
+
+
+FINAL SINGLE POINT ENERGY        -1.165000000003
+THE CP-SCF HAS CONVERGED
+VIBRATIONAL FREQUENCIES
+-----------------------
+
+   0:         0.00 cm**-1
+   5:         0.00 cm**-1
+   6:      4400.00 cm**-1
+
+NORMAL MODES
+Temperature         ... 298.15 K
+Zero point energy                ...      0.01002000 Eh       6.29 kcal/mol
+Total correction                          0.01238000 Eh       7.77 kcal/mol
+Thermal Enthalpy correction       ...      0.00094421 Eh       0.59 kcal/mol
+Final entropy term                ...      0.01482000 Eh      9.30 kcal/mol
+G-E(el)                           ...     -0.00150000 Eh      -0.94 kcal/mol
+                             ****ORCA TERMINATED NORMALLY****

@@ -1,0 +1,8 @@
+NAME = spincont.inp
+|  1> ! uks b3lyp def2-svp
+|  2>                          ****END OF INPUT****
+Expectation value of <S**2>     :     1.250000
+Ideal value S*(S+1) for S=0.5   :     0.750000
+Deviation                       :     0.500000
+FINAL SINGLE POINT ENERGY       -75.700000000000
+                             ****ORCA TERMINATED NORMALLY****
